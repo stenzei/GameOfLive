@@ -271,7 +271,7 @@ for (i in c(1:10)) {
 
 You can find all the code related with this post, including a shiny app and 
 the script for comparing the performance of different implementations in 
-parallel on [github]().
+parallel on [github](https://github.com/stenzei/GameOfLive).
 
 # Examples to play with
 
