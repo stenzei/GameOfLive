@@ -1,8 +1,7 @@
 library(shiny)
 library(d3heatmap)
 library(Matrix)
-
-source('app/constr.R')
+source('constr.R')
 
 # Define UI for application
 ui <- shinyUI(fluidPage(
@@ -59,7 +58,6 @@ server <- shinyServer(function(input, output) {
   # Event handler called when button is clicked
   observeEvent(input$stepButton, {
     # Plot the image
-    run <<- FALSE
     output$plot <- renderD3heatmap({ 
       x <- y <- c(1:width)
       calc_m()
@@ -79,10 +77,8 @@ server <- shinyServer(function(input, output) {
     constructMatrix(width, object)
     constructTransformation(width)
     
-    run <<- TRUE
     x <- y <- c(1:width)
     output$plot <- renderD3heatmap({ 
-      if (!run) return()
       invalidateLater(200)
       calc_m()
       d3heatmap(m, dendrogram = "none", 
@@ -96,7 +92,16 @@ server <- shinyServer(function(input, output) {
   # Event handler called when button is clicked
   observeEvent(input$stopButton, {
     # Plot the image
-    run <<- FALSE
+    output$plot <- renderD3heatmap({ 
+      x <- y <- c(1:width)
+      calc_m()
+      # (Ab)use d3heatmap for convenience
+      d3heatmap(m, dendrogram = "none", 
+                colors = "Purples",
+                width = "100%",
+                xaxis_font_size = "0pt", yaxis_font_size = "0pt",
+                xaxis_height = 1, yaxis_width = 1)
+    })
   })
 })
 

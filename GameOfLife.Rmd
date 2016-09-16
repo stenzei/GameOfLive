@@ -275,7 +275,7 @@ parallel on [github](https://github.com/stenzei/GameOfLive).
 
 # Examples to play with
 
-```{r tabsets, echo=FALSE}
+```{r tabsets, echo=FALSE, warning=FALSE, message=FALSE}
 shinyAppFile("app/game-of-life.R",
   options = list(
     width = "100%", height = 590
@@ -297,7 +297,7 @@ implementations are compared:
 The violin plot below shows performances for a quite sparse matrix. For
 less sparse matrices petrkeil performs better than the matrix approach.
 
-The matrices for the performance test is generated as follows:
+The square matrices for the performance test is generated as follows:
 
 ```{r, eval=FALSE}
 library(Matrix)

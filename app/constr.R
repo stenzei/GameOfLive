@@ -1,3 +1,5 @@
+library(Matrix)
+
 # Constucting game of life objects
 constructObject <- function(object) {
   if (object == 1) {
