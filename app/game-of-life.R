@@ -1,7 +1,7 @@
 library(shiny)
 library(d3heatmap)
 library(Matrix)
-source('constr.R')
+source('app/constr.R')
 
 # Define UI for application
 ui <- shinyUI(fluidPage(
