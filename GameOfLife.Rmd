@@ -1,0 +1,344 @@
+---
+title: "Vectorizing Spatio-Temporal Models"
+author: "stenze"
+date: "16. April 2016"
+output:
+  html_document:
+    css: style/scholmd-heuristically-latest.min.css
+    highlight: pygments
+    number_sections: no
+    theme: readable
+    toc: yes
+    toc_depth: 2
+    toc_float:
+      collapsed: no
+runtime: shiny
+resource_files:
+- app/game-of-life.R
+- app/constr.R
+---
+
+```{r setup, include=FALSE}
+library(d3heatmap)
+library(Matrix)
+library(knitr)
+```
+
+# Basics
+
+## Modeling
+
+Cellar automata [see Wikipedia](https://en.wikipedia.org/wiki/Cellular_automaton) 
+are a widely used tool in modeling e.g. when it comes 
+to the analysis of spatially explicit dynamics. The classical approach is
+to represent the 2-dimensional space as grid and iterate over it to calculate 
+neighborhood dynamics grid cell by grid cell. The computational effort for this
+is $O(n^3)$ with $n$ representing the width of a square matrix, representing the
+landscape. However, when we deal with large landscapes computation costs grow 
+strongly.
+
+Among other fields, in machine learning vectorization is a common approach to 
+reduce computation costs. Here I want to show how this approach can be applied
+to cellular automata. I am using Conway's Game of Life as an example. 
+
+## Game of Life {#rules}
+
+Conway's Game of Life is a simple but yet interesting cellular automaton (for 
+details see [Wikipedia](https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life)). 
+Implementations for a large number of programming languages can be found 
+[here](http://rosettacode.org/wiki/Conway%27s_Game_of_Life#C.2B.2B_2).
+
+The simple set of rules reads as follows:
+
+* A cell can be dead or alive.
+* For each cell its eight neighbors are considered.
+* A dead cell turns into a living one, if it is surrounded by three
+living cells.
+* A living cell turns into a dead one, if it is surrounded by less then two 
+living cells.
+* A living cell turns into a dead one, if it is surrounded by more then three 
+living cells.
+* In all other situation the cell keeps its status.
+
+# Vectorized version
+
+In the following a vectorized version of the game is shown and explained using 
+a 6 x 6 matrix representing the "landscape" where the game takes place.
+
+```{r}
+m <- t(matrix(c(0, 0, 0, 0, 0, 0, 
+                0, 0, 0, 0, 0, 0, 
+                0, 1, 1, 1, 0, 0,
+                0, 1, 1, 1, 0, 0, 
+                0, 1, 1, 1, 0, 0, 
+                0, 0, 0, 0, 0, 0), 6))
+```
+
+This is the initial state of of our cellular automaton. To calculate the 
+subsequent one, we need to know the number of living neighbors around each cell.
+To achieve that, we just transform this matrix $m$ in a few steps. For the
+transformation we use another matrix $t$:
+
+```{r}
+t <- t(matrix(c(1, 1, 0, 0, 0, 0, 
+                1, 1, 1, 0, 0, 0, 
+                0, 1, 1, 1, 0, 0,
+                0, 0, 1, 1, 1, 0, 
+                0, 0, 0, 1, 1, 1, 
+                0, 0, 0, 0, 1, 1), 6))
+```
+
+Multiplying matrix $m$ with $t$ yields the number of neighbors in a row.
+
+```{r}
+tm <- t %*% m
+```
+
+The resulting matrix looks like that:
+
+```{r, comment=NA, echo=FALSE}
+write.table(format(tm, justify = "right"),
+            row.names = FALSE, col.names = FALSE, quote = FALSE)
+```
+
+The numbers of neighbors in a column are calculated by swapping the factors of
+that matrix multiplication.
+
+```{r}
+tm <- m %*% t
+```
+
+Now the resulting matrix reads:
+
+```{r, comment=NA, echo=FALSE}
+write.table(format(tm, justify = "right"),
+            row.names = FALSE, col.names = FALSE, quote = FALSE)
+```
+
+Combining both operations yields the number of neighbors plus the focal cell
+itself.
+
+```{r}
+tm <- t %*% m %*% t
+```
+```{r, comment=NA, echo=FALSE}
+write.table(format(tm, justify="right"),
+            row.names=FALSE, col.names=FALSE, quote=FALSE)
+```
+
+To get only the number of neighboring cells for each cell without the cell 
+itself we have to subtract the original matrix $m$.
+
+```{r}
+tm <- t %*% m %*% t - m
+```
+```{r, comment=NA, echo=FALSE}
+write.table(format(tm, justify="right"),
+            row.names=FALSE, col.names=FALSE, quote=FALSE)
+```
+
+Now, we have the number of neighbors of each cell. Based on this we can 
+calculate the next states based on the [rules described above](#rules): 
+First, we set all cells to zero that will not be alive in the next time step.
+
+```{r}
+tm[tm == 1] = 0
+tm[tm > 3] = 0
+```
+```{r, comment=NA, echo=FALSE}
+write.table(format(tm, justify = "right"),
+            row.names = FALSE, col.names = FALSE, quote = FALSE)
+```
+
+Second, we are interested in all cells with three neighbors and living cells with
+two neighbors. By adding the original matrix $m$ to the matrix $tm$, all
+living cells with two or tree neighbors get the value 3 or 4. Dead cells with
+three neighbors also get the value 3. All other cells get the values 0, 1 or 2.
+These will be dead in the next time step.
+
+```{r}
+tm <- tm + m
+```
+```{r, comment=NA, echo=FALSE}
+write.table(format(tm, justify = "right"),
+            row.names = FALSE, col.names = FALSE, quote = FALSE)
+```
+
+Now, all dead cells are set to 0 and all other cells are set to 1.
+
+```{r}
+tm[tm < 3] = 0
+tm[tm > 0] = 1
+```
+```{r, comment=NA, echo=FALSE}
+write.table(format(tm, justify = "right"),
+            row.names = FALSE, col.names = FALSE, quote = FALSE)
+```
+
+Thus the whole algorithm for one time step reads:
+
+```{r}
+tm <- t %*% m %*% t - m
+tm[tm == 1] = 0
+tm[tm > 3] = 0
+tm <- tm + m
+tm[tm < 3] = 0
+tm[tm > 0] = 1
+m <- tm
+```
+
+# Modifications
+
+## Von Neumann neighbourhood
+
+If we were only interested in the __Von Neumann neighborhood__ (four neighbors 
+are considered), the corresponding calculation of $tm$ in the first line 
+would be:
+
+```{r, echo=FALSE}
+m <- t(matrix(c(0, 0, 0, 0, 0, 0, 
+                0, 0, 0, 0, 0, 0, 
+                0, 1, 1, 1, 0, 0,
+                0, 1, 1, 1, 0, 0, 
+                0, 1, 1, 1, 0, 0, 
+                0, 0, 0, 0, 0, 0), 6))
+```
+```{r}
+tm <- t %*% m + m %*% t - 2 * m
+```
+```{r, comment=NA, echo=FALSE}
+write.table(format(tm, justify="right"),
+            row.names = FALSE, col.names = FALSE, quote = FALSE)
+```
+
+## Torrodial world
+
+If we want to model a torrodial world where the game of life takes place, we 
+need to modify the transformation matrix $t$ (add ones in the lower left and 
+upper right corners).
+
+```{r}
+t <- t(matrix(c(1, 1, 0, 0, 0, 1, 
+                1, 1, 1, 0, 0, 0, 
+                0, 1, 1, 1, 0, 0,
+                0, 0, 1, 1, 1, 0, 
+                0, 0, 0, 1, 1, 1, 
+                1, 0, 0, 0, 1, 1), 6))
+```
+
+# R code
+
+The whole algorithm for a 20 x 20 torrodial world reads:
+
+```{r, eval=FALSE}
+library(Matrix)
+
+# Constructing the matrix of the game.
+width <- 20
+# Filling m with 0's.
+m <- Matrix(rep(0, width * width), width, sparse = TRUE)
+
+# Constructing a glider in the upper left corner.
+i <- 1
+j <- 1
+# Setting living cells of the glider.
+m[i + 1, j] <- 1
+m[i + 2, j + 1] <- 1
+m[i, j + 2] <- 1
+m[i + 1, j + 2] <- 1
+m[i + 2, j + 2] <- 1
+
+# Constructing the transformation matrix.
+tt <- Diagonal(width)
+# Constructing the minor diagonals.
+md <- Diagonal(width - 1)
+md <- rbind(0, cbind(md, 0))
+tt <- tt + md + t(md)
+# Making it torrodial. 
+tt[c(1,width),c(width,1)] <- 1
+  
+# Calculating the game for 10 time steps.
+for (i in c(1:10)) {
+  tm <- tt %*% m %*% tt - m
+  tm[tm == 1] = 0
+  tm[tm > 3] = 0
+  tm <- tm + m
+  tm[tm < 3] = 0
+  tm[tm > 0] = 1
+  m <- tm
+}
+```
+
+You can find all the code related with this post, including a shiny app and 
+the script for comparing the performance of different implementations in 
+parallel on [github]().
+
+# Examples to play with
+
+```{r tabsets, echo=FALSE}
+shinyAppFile("app/game-of-life.R",
+  options = list(
+    width = "100%", height = 590
+ )
+)
+```
+
+# Performance
+
+This approach is most advantageous for sparse matrices. To show this, three 
+implementations are compared: 
+
+- the straight forward implementations found on [rosettacode.org](http://rosettacode.org/wiki/Conway%27s_Game_of_Life#C.2B.2B_2),
+
+- a very fast implementation by petrkeil found on  [r-bloggers.com](https://www.r-bloggers.com/fast-conways-game-of-life-in-r/),
+
+- the implementation described here named *matrices*.
+
+The violin plot below shows performances for a quite sparse matrix. For
+less sparse matrices petrkeil performs better than the matrix approach.
+
+The matrices for the performance test is generated as follows:
+
+```{r, eval=FALSE}
+library(Matrix)
+
+m <- Matrix(nrow = side, ncol = side, sparse = TRUE)
+m[] <- rbinom(side^2, 1, 0.1)
+```
+
+`side` varies from 100 to 1000. For the rosetta implementation only matrices
+up to a side length of 300 grid cells are computed.
+
+```{r, echo=FALSE, warning=FALSE}
+library(ggplot2)
+tt <- read.csv(file = "performance/perform.csv", na.strings = "-1")
+names(tt) <- c("result", "size","rosetta", "petrkeil", "stenze")
+ggplot(tt) +
+ geom_violin(aes(as.factor(size), rosetta), 
+             fill = "#E69F00", scale = "width", color = "darkgray", alpha = 0.5) +
+ geom_violin(aes(as.factor(size), petrkeil), 
+             fill = "#56B4E9", scale = "width", color = "darkgray", alpha = 0.5) +
+ geom_violin(aes(as.factor(size), stenze), 
+             fill = "#009E73", scale = "width", color = "darkgray", alpha = 0.5) +
+ coord_cartesian(ylim = c(0, 100)) +
+ xlab("landscape size") +
+ ylab("computation time") +
+geom_text(aes(x = 3, y = 60, label = "rosetta"), check_overlap = TRUE, color = "#E69F00") + 
+geom_text(aes(x = 7.5, y = 40, label = "petrkeil"), check_overlap = TRUE, color = "#56B4E9") +
+geom_text(aes(x = 9, y = 8, label = "matrices"), check_overlap = TRUE, color = "#009E73")
+```
+
+# Conclusion
+
+This example can be seen as proof of concept, that for quadratic grids 
+using specialized algorithms for sparse matrix computation can be a fast
+alternative to classical approaches, which just use three nested for-loops. 
+At least for the rule set of Conway's game of life it is possible to use 
+linear algebra methods for computing spatio-temporal dynamics. 
+In principle this should be possible for other cellular automata as 
+well (which has to be proven).
+
+The advantage of this approach is that calculations of system dynamics can be 
+done even faster by using optimized algorithms and efficient parallel computing 
+strategies like map reduce, which is especially relevant when it comes to very 
+large grids.
